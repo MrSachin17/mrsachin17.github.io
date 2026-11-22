@@ -1,11 +1,11 @@
 import json, os, re, io, datetime, requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from pypdf import PdfReader
 
 H = {"User-Agent": "Mozilla/5.0"}
 KW = re.compile(r"recruit|notification|advert|vacanc|career|gate|engineer|trainee", re.I)
-MAX_NEW = 25  # cost/time cap per run
+MAX_NEW = 30  # cost/time cap per run
 KEY = os.environ.get("ANTHROPIC_API_KEY")
 GKEY = os.environ.get("GEMINI_API_KEY")  # free tier key from aistudio.google.com
 import time, smtplib
@@ -53,6 +53,23 @@ vacancies (int or null), note (short, e.g. "GATE 2027 based, dates awaited"),
 syllabus (concise topic list; if not in text, give the standard syllabus for this exam/post),
 prep (2-3 lines on how to prepare), apply_url (official application page URL if stated in the text), pay (salary or pay scale as stated, else null), selection (selection process in a few words, e.g. "GATE 2027 score + interview"). Use null for anything not stated; never guess dates."""
 
+AGG = ("freejobalert", "sarkariresult", "indgovtjobs", "sarkarijobfind", "rojgarresult", "employmentnews", "ncs.gov")
+
+def read(r, u):
+    """Return (text, official_link). official_link = first off-site PDF/notification link in an article."""
+    if u.lower().endswith(".pdf") or "pdf" in r.headers.get("content-type", ""):
+        pg = PdfReader(io.BytesIO(r.content)).pages[:6]
+        return "\n".join(p.extract_text() or "" for p in pg)[:12000], None
+    soup = BeautifulSoup(r.text, "html.parser")
+    host, pdfs, others = urlparse(u).netloc, [], []
+    for a in soup.find_all("a", href=True):
+        h = urljoin(u, a["href"]); d = urlparse(h).netloc
+        if not d or d == host or any(x in d for x in AGG): continue
+        if h.lower().endswith(".pdf"): pdfs.append(h)
+        elif re.search(r"notification|advertis|official|apply", a.get_text(), re.I): others.append(h)
+    off = (pdfs + others + [None])[0]
+    return soup.get_text(" ", strip=True)[:9000], off
+
 def text_of(url):
     r = requests.get(url, headers=H, timeout=30)
     if url.lower().endswith(".pdf") or "pdf" in r.headers.get("content-type", ""):
@@ -69,11 +86,18 @@ def regex_extract(txt, title):
 
 def extract(txt, title=""):
     if GKEY:
-        time.sleep(7)  # stay under free-tier rate limit
-        r = requests.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-            params={"key": GKEY}, timeout=90, json={"contents": [{"parts": [{"text": PROMPT + "\n\n" + txt}]}]})
-        out = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return json.loads(re.search(r"\[.*\]", out, re.S).group(0))
+        last = ""
+        for model in ("gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash"):
+            time.sleep(7)  # stay under free-tier rate limit
+            r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                params={"key": GKEY}, timeout=90, json={"contents": [{"parts": [{"text": PROMPT + "\n\n" + txt}]}]})
+            d = r.json()
+            if "candidates" in d:
+                out = d["candidates"][0]["content"]["parts"][0]["text"]
+                return json.loads(re.search(r"\[.*\]", out, re.S).group(0))
+            last = f"{model} -> HTTP {r.status_code}: {r.text[:300]}"
+            print("GEMINI ERROR", last)
+        raise RuntimeError(last)
     if not KEY: return regex_extract(txt, title)
     r = requests.post("https://api.anthropic.com/v1/messages", timeout=90,
         headers={"x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
@@ -88,7 +112,7 @@ for page in json.load(open("sources.json"))["pages"]:
         soup = BeautifulSoup(requests.get(page, headers=H, timeout=30).text, "html.parser")
         for a in soup.find_all("a", href=True):
             u = urljoin(page, a["href"])
-            if u.startswith("http") and u not in seen and KW.search(a.get_text() + u):
+            if u.startswith("http") and "#" not in u and u not in seen and KW.search(a.get_text() + u):
                 links[u] = (a.get_text(" ", strip=True)[:100], page)
     except Exception as e:
         print("page fail", page, e)
@@ -96,10 +120,22 @@ for page in json.load(open("sources.json"))["pages"]:
 for u in list(links)[:MAX_NEW]:
     seen.add(u)
     try:
-        for j in extract(text_of(u), links[u][0]):
-            j["link"] = u
-            j["source"] = links[u][1]
-            jobs.append(j)
+        title, page = links[u]
+        txt, off = read(requests.get(u, headers=H, timeout=30), u)
+        res = extract(txt, title)
+        for j in res:
+            j["link"] = u; j["source"] = page; j["verified"] = False
+        if res and off:  # cross-check against the official notification
+            try:
+                txt2, _ = read(requests.get(off, headers=H, timeout=30), off)
+                res2 = extract(txt2, title)
+                if res2:
+                    for j in res2:
+                        j["link"] = off; j["info_link"] = u; j["source"] = page; j["verified"] = True
+                    res = res2
+            except Exception as e:
+                print("official skip", off, e)
+        jobs.extend(res)
     except Exception as e:
         print("skip", u, e)
 
