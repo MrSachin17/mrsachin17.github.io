@@ -25,6 +25,7 @@ button{width:auto;cursor:pointer}textarea{min-height:90px;font:12px monospace}
 .more{display:none;margin-top:8px;font-size:14px;white-space:pre-wrap}.row.open .more{display:block}
 .empty{color:var(--mut);padding:12px 0}
 .ok,.no,.warn{color:var(--fg)}.no{opacity:.6}.d .no{opacity:1;font-weight:700}
+table{width:100%;border-collapse:collapse;font-size:14px}th{text-align:left;color:var(--mut);font-weight:500;font-size:12px}td,th{padding:7px 6px;border-top:1px solid var(--line);vertical-align:top}tr.r{cursor:pointer}tr.x{display:none}tr.x.open{display:table-row}tr.x td{white-space:pre-wrap;color:var(--mut)}
 </style></head><body>
 <h1>Job Tracker</h1>
 
@@ -33,54 +34,73 @@ button{width:auto;cursor:pointer}textarea{min-height:90px;font:12px monospace}
 <div><label>Date of birth</label><input type="date" id="dob"></div>
 <div><label>Category</label><select id="cat"><option>General</option><option>EWS</option><option>OBC</option><option>SC</option><option>ST</option></select></div>
 <div><label>Domicile state</label><input id="dom" placeholder="e.g. Uttar Pradesh"></div>
-<div><label>Highest qualification</label><select id="qual"><option>Diploma</option><option>B.Tech</option><option selected>M.Tech</option><option>PhD</option></select></div>
+<div><label>Qualifications held</label><div id="quals" style="display:flex;gap:10px;flex-wrap:wrap;padding-top:6px"><label><input type="checkbox" value="Diploma" style="width:auto"> Diploma</label><label><input type="checkbox" value="B.Tech" style="width:auto"> B.Tech</label><label><input type="checkbox" value="M.Tech" style="width:auto"> M.Tech</label><label><input type="checkbox" value="PhD" style="width:auto"> PhD</label></div></div>
 <div><label>Branch</label><input id="br" value="Electrical"></div>
 <div><label>Experience (years)</label><input type="number" id="exp" min="0" step="0.5" value="0"></div>
 </div></details>
 
-<details class="card"><summary>Data (jobs.json)</summary>
-<p class="m">The background fetcher writes jobs.json. Paste its content here, or load samples to see how it works.</p>
-<textarea id="ta" placeholder='[{"org":"","post":"","type":"PSU|Govt|Private","last_date":"2026-12-31","age_max":28,"qual":["B.Tech"],"branch":["Electrical"],"domicile":null,"min_exp":0,"vacancies":0,"link":"","syllabus":"","prep":""}]'></textarea>
-<div class="bar" style="margin:8px 0 0"><button id="imp">Import</button><button id="smp">Load samples</button><button id="clr">Clear</button></div></details>
 
+
+<div class="card" id="sum"></div>
+<input id="q" placeholder="Search post or organisation" style="margin-bottom:8px">
+<div class="m" id="upd" style="margin:-4px 0 2px"></div><div class="m" id="rs" style="margin-bottom:8px"></div>
 <div class="bar" id="flt"></div>
 <div class="card" id="list"></div>
 
+<details class="card"><summary>Auto-refresh setup</summary>
+<p class="m">Paste your GitHub token once. It is stored only in this browser. Opening this page then requests a fresh fetch automatically.</p>
+<input type="password" id="tok" placeholder="GitHub token">
+<div class="bar" style="margin-top:8px"><button id="tsave">Save</button><button id="tnow">Refresh now</button><button id="tclr">Remove token</button></div></details>
 <script>
 const $=id=>document.getElementById(id);
 const K=(a,b)=>{try{return b===undefined?JSON.parse(localStorage.getItem(a)):localStorage.setItem(a,JSON.stringify(b))}catch(e){return null}};
 let jobs=K('jobs')||[],prof=K('prof')||{},filt='All';
-const F=['dob','cat','dom','qual','br','exp'];
+const F=['dob','cat','dom','br','exp'];
 F.forEach(i=>{if(prof[i]!==undefined)$(i).value=prof[i];$(i).onchange=()=>{prof[i]=$(i).value;K('prof',prof);render()}});
+const held=()=>[...document.querySelectorAll('#quals input:checked')].map(i=>i.value);
+document.querySelectorAll('#quals input').forEach(i=>{i.checked=(prof.quals||['B.Tech','M.Tech']).includes(i.value);i.onchange=()=>{prof.quals=held();K('prof',prof);render()}});
 const QR={Diploma:0,'B.Tech':1,'M.Tech':2,PhD:3},RELAX={General:0,EWS:0,OBC:3,SC:5,ST:5};
 const day=s=>new Date(s+'T00:00:00'),today=()=>{const d=new Date();d.setHours(0,0,0,0);return d};
 function age(dob,at){let a=at.getFullYear()-dob.getFullYear();const m=at.getMonth()-dob.getMonth();if(m<0||(m===0&&at.getDate()<dob.getDate()))a--;return a}
 function check(j){
-  const r=[];const p={dob:$('dob').value,cat:$('cat').value,dom:$('dom').value.trim().toLowerCase(),qual:$('qual').value,br:$('br').value.trim().toLowerCase(),exp:+$('exp').value||0};
+  const r=[];const p={dob:$('dob').value,cat:$('cat').value,dom:$('dom').value.trim().toLowerCase(),qual:held(),br:$('br').value.trim().toLowerCase(),exp:+$('exp').value||0};
   if(j.age_max){ if(!p.dob)r.push(['?','Enter DOB']); else{const a=age(day(p.dob),j.age_cutoff?day(j.age_cutoff):today()),lim=j.age_max+(RELAX[p.cat]||0);if(a>lim)r.push(['x','Age '+a+' > limit '+lim])}}
-  if(j.qual&&j.qual.length){const need=Math.min(...j.qual.map(q=>QR[q]??9));if(QR[p.qual]<need)r.push(['x','Needs '+j.qual.join('/')])}
+  if(j.qual&&j.qual.length){const need=Math.min(...j.qual.map(q=>QR[q]??9));if(!p.qual.some(q=>j.qual.includes(q))&&Math.max(-1,...p.qual.map(q=>QR[q]))<need)r.push(['x','Needs '+j.qual.join('/')])}
   if(j.branch&&j.branch.length&&p.br&&!j.branch.some(b=>p.br.includes(b.toLowerCase())||b.toLowerCase().includes(p.br)))r.push(['x','Branch: '+j.branch.join('/')]);
   if(j.domicile){ if(!p.dom)r.push(['?','Enter domicile']); else if(p.dom!==j.domicile.toLowerCase())r.push(['x','Domicile: '+j.domicile])}
   if(j.min_exp&&p.exp<j.min_exp)r.push(['x','Needs '+j.min_exp+'y experience']);
   if(r.some(x=>x[0]==='x'))return{s:'Not eligible',c:'no',why:r.filter(x=>x[0]==='x').map(x=>x[1]).join('; ')};
   if(r.length)return{s:'Check',c:'warn',why:r.map(x=>x[1]).join('; ')};
   return{s:'Eligible',c:'ok',why:''}}
+const host=u=>{try{return new URL(u).hostname.replace('www.','')}catch(e){return ''}};
+const lk=(u,t)=>u?`<a href="${String(u).replace(/"/g,'')}" target="_blank" rel="noopener" style="color:inherit">${t} ↗</a>`:'';
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function render(){
-  $('flt').innerHTML=['All','Eligible','PSU','Govt','Private','Tentative'].map(f=>`<button class="${f===filt?'on':''}" data-f="${f}">${f}</button>`).join('');
+  $('flt').innerHTML=['All','Eligible','PSU','Govt','Private','Tentative','Expired'].map(f=>`<button class="${f===filt?'on':''}" data-f="${f}">${f}</button>`).join('');
   document.querySelectorAll('#flt button').forEach(b=>b.onclick=()=>{filt=b.dataset.f;render()});
   const t=today();
-  let L=jobs.filter(j=>j.last_date?day(j.last_date)>=t:j.status==='tentative').map(j=>({j,e:check(j),d:j.last_date?Math.round((day(j.last_date)-t)/864e5):9999})).sort((a,b)=>a.d-b.d);
-  if(filt==='Eligible')L=L.filter(x=>x.e.s==='Eligible');else if(filt!=='All')L=L.filter(x=>filt==='Tentative'?x.j.status==='tentative':x.j.type===filt);
-  $('list').innerHTML=L.length?L.map((x,i)=>{const j=x.j;return`<div class="row" data-i="${i}"><div class="top"><div><div class="t">${esc(j.post)}</div><div class="m">${esc(j.org)}${j.vacancies?' · '+j.vacancies+' posts':''}</div></div><div class="d">${esc(j.last_date||'Tentative')}<br><span class="${x.d<=7?'no':'m'}">${x.d===9999?esc(j.note||''):x.d===0?'today':x.d+' days'}</span></div></div><div style="margin-top:4px"><span class="tag">${esc(j.type)}</span><span class="${x.e.c}">${x.e.s}</span> <span class="m">${esc(x.e.why)}</span></div><div class="more">${j.link?`<a href="${esc(j.link)}" target="_blank" rel="noopener" style="color:inherit">Notification ↗</a>\n\n`:''}<b>Syllabus</b>\n${esc(j.syllabus||'—')}\n\n<b>How to prepare</b>\n${esc(j.prep||'—')}</div></div>`}).join(''):'<div class="empty">No open notifications match. Import data above.</div>';
-  document.querySelectorAll('.row').forEach(r=>r.onclick=e=>{if(e.target.tagName!=='A')r.classList.toggle('open')})}
-$('imp').onclick=()=>{try{const v=JSON.parse($('ta').value);if(!Array.isArray(v))throw 0;jobs=v;K('jobs',jobs);$('ta').value='';render()}catch(e){alert('Invalid JSON array')}};
-$('clr').onclick=()=>{jobs=[];K('jobs',jobs);render()};
-$('smp').onclick=()=>{const o=n=>{const d=today();d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
-  jobs=[{org:'SAMPLE PSU',post:'Engineer Trainee (Electrical)',type:'PSU',last_date:o(6),age_max:28,qual:['B.Tech'],branch:['Electrical'],vacancies:100,syllabus:'Sample: GATE-pattern EE syllabus.',prep:'Sample: GATE score based shortlisting, then interview.'},
-  {org:'SAMPLE State Board',post:'Assistant Engineer',type:'Govt',last_date:o(14),age_max:30,qual:['B.Tech'],branch:['Electrical'],domicile:'Bihar',vacancies:40,syllabus:'Sample: Technical + general aptitude.',prep:'Sample: previous papers, 3 months.'},
-  {org:'SAMPLE Pvt Co',post:'Senior Design Engineer',type:'Private',last_date:o(30),min_exp:3,qual:['B.Tech'],branch:['Electrical'],syllabus:'Sample: interview-based.',prep:'Sample: portfolio and design basics.'}];
-  K('jobs',jobs);render()};
-fetch('jobs.json').then(x=>x.ok?x.json():null).then(v=>{if(Array.isArray(v)){jobs=v;render()}}).catch(()=>{});
+  let L=jobs.filter(j=>j.last_date||j.status==='tentative').map(j=>({j,e:check(j),d:j.last_date?Math.round((day(j.last_date)-t)/864e5):9999})).sort((a,b)=>(a.d<0)-(b.d<0)||(a.d<0?b.d-a.d:a.d-b.d));
+  {const O=L.filter(x=>x.d>=0),el=O.filter(x=>x.e.s==='Eligible'),nx=el.find(x=>x.d<9999);
+  $('sum').innerHTML=`<b>${O.length}</b> open · <b>${el.length}</b> eligible · <b>${O.filter(x=>x.d<=7).length}</b> closing within 7 days · <b>${O.filter(x=>x.d===9999).length}</b> tentative · <b>${L.length-O.length}</b> closed (archived)`+(nx?`<div class="m">Next deadline: ${esc(nx.j.post)}, ${esc(nx.j.org)} (${nx.d} days)</div>`:'')}
+  L=filt==='Expired'?L.filter(x=>x.d<0):L.filter(x=>x.d>=0);
+  const qv=$('q').value.toLowerCase();if(qv)L=L.filter(x=>(x.j.post+' '+x.j.org).toLowerCase().includes(qv));
+  if(filt==='Eligible')L=L.filter(x=>x.e.s==='Eligible');else if(filt!=='All'&&filt!=='Expired')L=L.filter(x=>filt==='Tentative'?x.j.status==='tentative':x.j.type===filt);
+  $('list').innerHTML=L.length?`<div style="overflow-x:auto"><table><thead><tr><th>Last date</th><th>Left</th><th>Organisation</th><th>Post</th><th>Type</th><th>Posts</th><th>Age (Gen)</th><th>Qualification</th><th>Pay</th><th>Selection</th><th>Status</th></tr></thead><tbody>${L.map(x=>{const j=x.j;return`<tr class="r"><td>${esc(j.last_date||'Tentative')}</td><td>${x.d===9999?'—':x.d<0?'closed':x.d+'d'}</td><td style="min-width:130px"><b>${esc(j.org||'—')}</b></td><td style="min-width:150px">${esc(j.post)}</td><td>${esc(j.type)}</td><td>${j.vacancies||'—'}</td><td>${j.age_max?j.age_max+' yrs':'—'}</td><td style="min-width:120px">${esc([...(j.qual||[]),...(j.branch||[])].join(' / ')||'—')}${j.domicile?'<div class="m">Domicile: '+esc(j.domicile)+'</div>':''}</td><td>${esc(j.pay||'—')}</td><td style="min-width:120px">${esc(j.selection||'—')}</td><td class="${x.e.c}">${x.e.s}</td></tr><tr class="x"><td colspan="11">${esc(x.e.why||'')}${j.note?'\n'+esc(j.note):''}${j.vacancies?'\nPosts: '+j.vacancies:''}\n${[lk(j.link,'Notification'),lk(j.apply_url,'Apply (official)'),lk(j.source,'Found on '+host(j.source))].filter(Boolean).join('  ·  ')}\n\n<b>Syllabus</b>\n${esc(j.syllabus||'—')}\n\n<b>How to prepare</b>\n${esc(j.prep||'—')}</td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty">No open notifications match.</div>';
+  document.querySelectorAll('tr.r').forEach(r=>r.onclick=()=>r.nextElementSibling.classList.toggle('open'))}
+$('q').oninput=render;
+const repo=(()=>{const o=location.hostname.split('.')[0],p=location.pathname.split('/')[1];return o+'/'+(p||o+'.github.io')})();
+let curLM='';
+const pull=async()=>{try{const x=await fetch('jobs.json?t='+Date.now(),{cache:'no-store'});if(!x.ok)return false;const lm=x.headers.get('last-modified')||'';const v=await x.json();if(Array.isArray(v)&&lm!==curLM){curLM=lm;jobs=v;K('jobs',jobs);render();if(lm)$('upd').textContent='Data updated: '+new Date(lm).toLocaleString();return true}}catch(e){}return false};
+const kick=async()=>{const t=K('gh'),st=$('rs');if(!t)return;
+ if(Date.now()-(K('kick')||0)<20*60*1000){st.textContent='Fresh fetch was already requested in the last 20 minutes.';return}
+ try{const r=await fetch('https://api.github.com/repos/'+repo+'/actions/workflows/fetch.yml/dispatches',{method:'POST',headers:{Authorization:'Bearer '+t,Accept:'application/vnd.github+json'},body:JSON.stringify({ref:'main'})});
+ if(r.status!==204){st.textContent='Refresh request failed ('+r.status+'). Check the token.';return}
+ K('kick',Date.now());st.textContent='Fetching fresh data. This page updates itself in 3 to 6 minutes.';
+ for(let i=0;i<24;i++){await new Promise(z=>setTimeout(z,30000));if(await pull()){st.textContent='Updated with fresh data.';return}}
+ st.textContent='Fetch finished. No new changes found.'}catch(e){st.textContent='Refresh failed.'}};
+$('tsave').onclick=()=>{const v=$('tok').value.trim();if(!v)return;K('gh',v);$('tok').value='';K('kick',0);kick()};
+$('tnow').onclick=()=>{K('kick',0);kick()};
+$('tclr').onclick=()=>{K('gh',null);$('rs').textContent='Token removed.'};
+pull();kick();
 render();
 </script></body></html>

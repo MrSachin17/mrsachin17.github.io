@@ -8,9 +8,39 @@ KW = re.compile(r"recruit|notification|advert|vacanc|career|gate|engineer|traine
 MAX_NEW = 25  # cost/time cap per run
 KEY = os.environ.get("ANTHROPIC_API_KEY")
 GKEY = os.environ.get("GEMINI_API_KEY")  # free tier key from aistudio.google.com
-import time
+import time, smtplib
+from email.message import EmailMessage
 load = lambda f: json.load(open(f)) if os.path.exists(f) else []
 seen, jobs = set(load("seen.json")), load("jobs.json")
+key = lambda j: f"{j.get('org')}|{j.get('post')}|{j.get('last_date')}"
+old_keys = {key(j) for j in jobs}
+try: prof = json.loads(os.environ.get("PROFILE_JSON") or "null")
+except Exception: prof = None
+QR = {"Diploma": 0, "B.Tech": 1, "M.Tech": 2, "PhD": 3}
+RELAX = {"General": 0, "EWS": 0, "OBC": 3, "SC": 5, "ST": 5}
+
+def eligible(j):
+    """True / False / None (cannot tell)."""
+    if not prof: return None
+    try:
+        if j.get("age_max"):
+            dob = datetime.date.fromisoformat(prof["dob"])
+            at = datetime.date.fromisoformat(j["age_cutoff"]) if j.get("age_cutoff") else datetime.date.today()
+            a = at.year - dob.year - ((at.month, at.day) < (dob.month, dob.day))
+            if a > j["age_max"] + RELAX.get(prof.get("category"), 0): return False
+        q = j.get("qual") or []
+        if q:
+            need = min(QR.get(x, 9) for x in q); held = prof.get("quals", [])
+            if not any(h in q for h in held) and max([-1] + [QR.get(h, -1) for h in held]) < need: return False
+        b = [x.lower() for x in (j.get("branch") or [])]; mine = prof.get("branch", "").lower()
+        if b and mine and not any(x in mine or mine in x for x in b): return False
+        if j.get("domicile"):
+            if not prof.get("domicile"): return None
+            if j["domicile"].lower() != prof["domicile"].lower(): return False
+        if (j.get("min_exp") or 0) > prof.get("exp", 0): return False
+        return True
+    except Exception:
+        return None
 
 PROMPT = """You read a job/recruitment page. If it is NOT a recruitment notice or an announcement
 of upcoming recruitment (e.g. via GATE 2027), return [].
@@ -21,7 +51,7 @@ age_cutoff (YYYY-MM-DD or null), qual (subset of ["Diploma","B.Tech","M.Tech","P
 branch (list of lowercase branch words, [] if any), domicile (state or null), min_exp (years, 0 if none),
 vacancies (int or null), note (short, e.g. "GATE 2027 based, dates awaited"),
 syllabus (concise topic list; if not in text, give the standard syllabus for this exam/post),
-prep (2-3 lines on how to prepare). Use null for anything not stated; never guess dates."""
+prep (2-3 lines on how to prepare), apply_url (official application page URL if stated in the text), pay (salary or pay scale as stated, else null), selection (selection process in a few words, e.g. "GATE 2027 score + interview"). Use null for anything not stated; never guess dates."""
 
 def text_of(url):
     r = requests.get(url, headers=H, timeout=30)
@@ -59,21 +89,39 @@ for page in json.load(open("sources.json"))["pages"]:
         for a in soup.find_all("a", href=True):
             u = urljoin(page, a["href"])
             if u.startswith("http") and u not in seen and KW.search(a.get_text() + u):
-                links[u] = a.get_text(" ", strip=True)[:100]
+                links[u] = (a.get_text(" ", strip=True)[:100], page)
     except Exception as e:
         print("page fail", page, e)
 
 for u in list(links)[:MAX_NEW]:
     seen.add(u)
     try:
-        for j in extract(text_of(u), links[u]):
+        for j in extract(text_of(u), links[u][0]):
             j["link"] = u
+            j["source"] = links[u][1]
             jobs.append(j)
     except Exception as e:
         print("skip", u, e)
 
 today = datetime.date.today().isoformat()
-jobs = [j for j in jobs if (j.get("last_date") or "9999") >= today]
 uniq = {(j.get("org"), j.get("post"), j.get("last_date")): j for j in jobs}
 json.dump(sorted(uniq.values(), key=lambda j: j.get("last_date") or "9999"), open("jobs.json", "w"), indent=1)
 json.dump(sorted(seen)[-3000:], open("seen.json", "w"))
+
+# ---- email alerts: new eligible notices + eligible ones closing within 3 days ----
+alerted = set(load("alerted.json"))
+td = datetime.date.today(); alerts = []
+for j in uniq.values():
+    if eligible(j) is False: continue
+    if j.get("last_date") and j["last_date"] < td.isoformat(): continue
+    k = key(j)
+    if k not in old_keys and k + "|new" not in alerted:
+        alerts.append(("NEW", j)); alerted.add(k + "|new")
+    elif j.get("last_date") and 0 <= (datetime.date.fromisoformat(j["last_date"]) - td).days <= 3 and k + "|soon" not in alerted:
+        alerts.append(("CLOSING SOON", j)); alerted.add(k + "|soon")
+json.dump(sorted(alerted)[-3000:], open("alerted.json", "w"))
+U, P, T = os.environ.get("MAIL_USER"), os.environ.get("MAIL_APP_PASSWORD"), os.environ.get("MAIL_TO")
+if alerts and U and P and T:
+    m = EmailMessage(); m["Subject"] = f"Job Tracker: {len(alerts)} update(s)"; m["From"] = U; m["To"] = T
+    m.set_content("\n\n".join(f"[{t}] {j.get('post')} - {j.get('org')} ({j.get('type')})\nLast date: {j.get('last_date') or 'tentative'}\n{j.get('note') or ''}\n{j.get('link')}" for t, j in alerts))
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s: s.login(U, P); s.send_message(m)
