@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Job Tracker</title>
+<style>
+:root{--bg:#fafaf9;--fg:#1c1c1a;--mut:#6b6b66;--line:#e2e2dd;--card:#fff;--ok:#1f6f43;--no:#9b2c2c;--warn:#8a6100;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161615;--fg:#eceae4;--mut:#9a988f;--line:#2e2e2b;--card:#1e1e1c;--ok:#5fc08a;--no:#e08585;--warn:#d6a843}}
+:root[data-theme="dark"]{--bg:#161615;--fg:#eceae4;--mut:#9a988f;--line:#2e2e2b;--card:#1e1e1c;--ok:#5fc08a;--no:#e08585;--warn:#d6a843}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px;max-width:900px;margin:auto}
+h1{font-size:18px;margin:0 0 12px;font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+summary{cursor:pointer;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:10px}
+label{font-size:12px;color:var(--mut);display:block}
+input,select,textarea,button{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+button{width:auto;cursor:pointer}textarea{min-height:90px;font:12px monospace}
+.bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.bar button.on{background:var(--fg);color:var(--bg)}
+.row{border-top:1px solid var(--line);padding:10px 0}.row:first-child{border-top:0}
+.top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.t{font-weight:600}.m{color:var(--mut);font-size:13px}
+.tag{font-size:11px;border:1px solid var(--line);border-radius:4px;padding:1px 6px;margin-right:4px;color:var(--mut)}
+.ok{color:var(--ok)}.no{color:var(--no)}.warn{color:var(--warn)}
+.d{white-space:nowrap;text-align:right;font-size:13px}
+.more{display:none;margin-top:8px;font-size:14px;white-space:pre-wrap}.row.open .more{display:block}
+.empty{color:var(--mut);padding:12px 0}
+.ok,.no,.warn{color:var(--fg)}.no{opacity:.6}.d .no{opacity:1;font-weight:700}
+</style></head><body>
+<h1>Job Tracker</h1>
+
+<details class="card" id="pf"><summary>My profile</summary>
+<div class="grid">
+<div><label>Date of birth</label><input type="date" id="dob"></div>
+<div><label>Category</label><select id="cat"><option>General</option><option>EWS</option><option>OBC</option><option>SC</option><option>ST</option></select></div>
+<div><label>Domicile state</label><input id="dom" placeholder="e.g. Uttar Pradesh"></div>
+<div><label>Highest qualification</label><select id="qual"><option>Diploma</option><option>B.Tech</option><option selected>M.Tech</option><option>PhD</option></select></div>
+<div><label>Branch</label><input id="br" value="Electrical"></div>
+<div><label>Experience (years)</label><input type="number" id="exp" min="0" step="0.5" value="0"></div>
+</div></details>
+
+<details class="card"><summary>Data (jobs.json)</summary>
+<p class="m">The background fetcher writes jobs.json. Paste its content here, or load samples to see how it works.</p>
+<textarea id="ta" placeholder='[{"org":"","post":"","type":"PSU|Govt|Private","last_date":"2026-12-31","age_max":28,"qual":["B.Tech"],"branch":["Electrical"],"domicile":null,"min_exp":0,"vacancies":0,"link":"","syllabus":"","prep":""}]'></textarea>
+<div class="bar" style="margin:8px 0 0"><button id="imp">Import</button><button id="smp">Load samples</button><button id="clr">Clear</button></div></details>
+
+<div class="bar" id="flt"></div>
+<div class="card" id="list"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const K=(a,b)=>{try{return b===undefined?JSON.parse(localStorage.getItem(a)):localStorage.setItem(a,JSON.stringify(b))}catch(e){return null}};
+let jobs=K('jobs')||[],prof=K('prof')||{},filt='All';
+const F=['dob','cat','dom','qual','br','exp'];
+F.forEach(i=>{if(prof[i]!==undefined)$(i).value=prof[i];$(i).onchange=()=>{prof[i]=$(i).value;K('prof',prof);render()}});
+const QR={Diploma:0,'B.Tech':1,'M.Tech':2,PhD:3},RELAX={General:0,EWS:0,OBC:3,SC:5,ST:5};
+const day=s=>new Date(s+'T00:00:00'),today=()=>{const d=new Date();d.setHours(0,0,0,0);return d};
+function age(dob,at){let a=at.getFullYear()-dob.getFullYear();const m=at.getMonth()-dob.getMonth();if(m<0||(m===0&&at.getDate()<dob.getDate()))a--;return a}
+function check(j){
+  const r=[];const p={dob:$('dob').value,cat:$('cat').value,dom:$('dom').value.trim().toLowerCase(),qual:$('qual').value,br:$('br').value.trim().toLowerCase(),exp:+$('exp').value||0};
+  if(j.age_max){ if(!p.dob)r.push(['?','Enter DOB']); else{const a=age(day(p.dob),j.age_cutoff?day(j.age_cutoff):today()),lim=j.age_max+(RELAX[p.cat]||0);if(a>lim)r.push(['x','Age '+a+' > limit '+lim])}}
+  if(j.qual&&j.qual.length){const need=Math.min(...j.qual.map(q=>QR[q]??9));if(QR[p.qual]<need)r.push(['x','Needs '+j.qual.join('/')])}
+  if(j.branch&&j.branch.length&&p.br&&!j.branch.some(b=>p.br.includes(b.toLowerCase())||b.toLowerCase().includes(p.br)))r.push(['x','Branch: '+j.branch.join('/')]);
+  if(j.domicile){ if(!p.dom)r.push(['?','Enter domicile']); else if(p.dom!==j.domicile.toLowerCase())r.push(['x','Domicile: '+j.domicile])}
+  if(j.min_exp&&p.exp<j.min_exp)r.push(['x','Needs '+j.min_exp+'y experience']);
+  if(r.some(x=>x[0]==='x'))return{s:'Not eligible',c:'no',why:r.filter(x=>x[0]==='x').map(x=>x[1]).join('; ')};
+  if(r.length)return{s:'Check',c:'warn',why:r.map(x=>x[1]).join('; ')};
+  return{s:'Eligible',c:'ok',why:''}}
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function render(){
+  $('flt').innerHTML=['All','Eligible','PSU','Govt','Private','Tentative'].map(f=>`<button class="${f===filt?'on':''}" data-f="${f}">${f}</button>`).join('');
+  document.querySelectorAll('#flt button').forEach(b=>b.onclick=()=>{filt=b.dataset.f;render()});
+  const t=today();
+  let L=jobs.filter(j=>j.last_date?day(j.last_date)>=t:j.status==='tentative').map(j=>({j,e:check(j),d:j.last_date?Math.round((day(j.last_date)-t)/864e5):9999})).sort((a,b)=>a.d-b.d);
+  if(filt==='Eligible')L=L.filter(x=>x.e.s==='Eligible');else if(filt!=='All')L=L.filter(x=>filt==='Tentative'?x.j.status==='tentative':x.j.type===filt);
+  $('list').innerHTML=L.length?L.map((x,i)=>{const j=x.j;return`<div class="row" data-i="${i}"><div class="top"><div><div class="t">${esc(j.post)}</div><div class="m">${esc(j.org)}${j.vacancies?' · '+j.vacancies+' posts':''}</div></div><div class="d">${esc(j.last_date||'Tentative')}<br><span class="${x.d<=7?'no':'m'}">${x.d===9999?esc(j.note||''):x.d===0?'today':x.d+' days'}</span></div></div><div style="margin-top:4px"><span class="tag">${esc(j.type)}</span><span class="${x.e.c}">${x.e.s}</span> <span class="m">${esc(x.e.why)}</span></div><div class="more">${j.link?`<a href="${esc(j.link)}" target="_blank" rel="noopener" style="color:inherit">Notification ↗</a>\n\n`:''}<b>Syllabus</b>\n${esc(j.syllabus||'—')}\n\n<b>How to prepare</b>\n${esc(j.prep||'—')}</div></div>`}).join(''):'<div class="empty">No open notifications match. Import data above.</div>';
+  document.querySelectorAll('.row').forEach(r=>r.onclick=e=>{if(e.target.tagName!=='A')r.classList.toggle('open')})}
+$('imp').onclick=()=>{try{const v=JSON.parse($('ta').value);if(!Array.isArray(v))throw 0;jobs=v;K('jobs',jobs);$('ta').value='';render()}catch(e){alert('Invalid JSON array')}};
+$('clr').onclick=()=>{jobs=[];K('jobs',jobs);render()};
+$('smp').onclick=()=>{const o=n=>{const d=today();d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
+  jobs=[{org:'SAMPLE PSU',post:'Engineer Trainee (Electrical)',type:'PSU',last_date:o(6),age_max:28,qual:['B.Tech'],branch:['Electrical'],vacancies:100,syllabus:'Sample: GATE-pattern EE syllabus.',prep:'Sample: GATE score based shortlisting, then interview.'},
+  {org:'SAMPLE State Board',post:'Assistant Engineer',type:'Govt',last_date:o(14),age_max:30,qual:['B.Tech'],branch:['Electrical'],domicile:'Bihar',vacancies:40,syllabus:'Sample: Technical + general aptitude.',prep:'Sample: previous papers, 3 months.'},
+  {org:'SAMPLE Pvt Co',post:'Senior Design Engineer',type:'Private',last_date:o(30),min_exp:3,qual:['B.Tech'],branch:['Electrical'],syllabus:'Sample: interview-based.',prep:'Sample: portfolio and design basics.'}];
+  K('jobs',jobs);render()};
+fetch('jobs.json').then(x=>x.ok?x.json():null).then(v=>{if(Array.isArray(v)){jobs=v;render()}}).catch(()=>{});
+render();
+</script></body></html>

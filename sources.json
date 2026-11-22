@@ -1,0 +1,7 @@
+{
+  "note": "Add or fix page URLs. Put PSU career/recruitment pages first (NTPC, Power Grid, BHEL, ONGC, IOCL, etc.). Verify each URL once in a browser.",
+  "pages": [
+    "https://www.employmentnews.gov.in/",
+    "https://www.freejobalert.com/engineering-jobs/"
+  ]
+}
