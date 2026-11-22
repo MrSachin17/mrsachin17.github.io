@@ -1,7 +1,21 @@
 {
-  "note": "Add or fix page URLs. Put PSU career/recruitment pages first (NTPC, Power Grid, BHEL, ONGC, IOCL, etc.). Verify each URL once in a browser.",
-  "pages": [
-    "https://www.employmentnews.gov.in/",
-    "https://www.freejobalert.com/engineering-jobs/"
-  ]
+ "note": "Official PSU pages first (they are read first), then job-alert sites. Pages that fail are skipped safely. Add your own URLs.",
+ "pages": [
+  "https://careers.ntpc.co.in/",
+  "https://www.powergrid.in/en/job-opportunities",
+  "https://careers.bhel.in/",
+  "https://ongcindia.com/web/eng/career",
+  "https://iocl.com/latest-job-opening",
+  "https://gailonline.com/CR_CurrentOpenings.html",
+  "https://sailcareers.com/",
+  "https://www.coalindia.in/career-with-cil/",
+  "https://www.freejobalert.com/latest-notifications/",
+  "https://www.freejobalert.com/engineering-jobs/",
+  "https://www.sarkariresult.com/",
+  "https://www.indgovtjobs.in/",
+  "https://www.sarkarijobfind.com/",
+  "https://www.rojgarresult.com/",
+  "https://www.employmentnews.gov.in/",
+  "https://www.ncs.gov.in/"
+ ]
 }
