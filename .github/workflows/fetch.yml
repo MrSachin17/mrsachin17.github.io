@@ -1,9 +1,12 @@
 name: fetch-jobs
 on:
-  schedule: [{cron: "30 1 * * *"}]
+  schedule: [{cron: "30 1,13 * * *"}]   # 7:00 AM IST daily
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: fetch
+  cancel-in-progress: false
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -16,7 +19,11 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PROFILE_JSON: ${{ secrets.PROFILE_JSON }}
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          MAIL_APP_PASSWORD: ${{ secrets.MAIL_APP_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
       - run: |
           git config user.name bot; git config user.email bot@users.noreply.github.com
-          git add jobs.json seen.json
+          git add jobs.json seen.json alerted.json
           git diff --staged --quiet || (git commit -m "update jobs" && git push)
