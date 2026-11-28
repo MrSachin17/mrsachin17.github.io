@@ -1,1 +1,30 @@
-[]
+[
+ {
+  "org": "State Bank of India",
+  "post": "Assistant Manager \u2013 Engineer (Fire)",
+  "type": "PSU",
+  "status": "open",
+  "last_date": "2026-12-02",
+  "age_max": 40,
+  "age_cutoff": "2026-10-31",
+  "qual": [
+   "B.Tech"
+  ],
+  "branch": [
+   "fire engineering",
+   "fire safety"
+  ],
+  "domicile": null,
+  "min_exp": 2,
+  "vacancies": 17,
+  "note": null,
+  "syllabus": "Fire Prevention and Protection Systems, Fire Safety Audits, Emergency Evacuation Procedures, National Building Code (NBC) guidelines, Fire Fighting Equipment & Hydraulics, General Awareness, Reasoning, and Professional Knowledge",
+  "prep": "Study fire safety regulations, NBC norms, and industrial fire protection systems thoroughly. Revise standard firefighting equipment operation and audit procedures. Practice reasoning, English, and core fire engineering mock tests.",
+  "apply_url": "https://sbi.bank.in",
+  "pay": "Rs. 48,480 - 85,920 per month (JMGS-I)",
+  "selection": "Online Written Test and Interview",
+  "link": "https://www.freejobalert.com/articles/sbi-assistant-manager-engineer-fire-recruitment-2026-3083829",
+  "source": "https://www.freejobalert.com/engineering-jobs/",
+  "verified": false
+ }
+]
